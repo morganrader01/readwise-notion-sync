@@ -92,13 +92,13 @@ The Database ID is the 32-character string (with or without dashes).
 Your Notion database needs these properties (columns):
 
 **Required Properties:**
-- `Title` (Title type)
-- `Category` (Select type) with options: `Books`, `Articles`, `Quote`, `Podcast`
-- `Status` (Status type) with option: `Not started`
+- `Name` (Title type)
+- `Item Type` (Select type) with options: `Book`, `Article`, `Quote`, `Podcast`, `PDF`, `Video`
+- `Status` (Status type) with option: `To Read`
 - `Highlights` (Number type)
 
 **Optional but Recommended:**
-- `Author` (Text type)
+- `Authors` (Text type)
 - `Last Synced` (Date type)
 - `Last Highlighted` (Date type)
 - `URL` (URL type)
