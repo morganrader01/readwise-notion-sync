@@ -270,297 +270,291 @@ class ReadwiseNotionSync:
         return text.lower()
     
     def get_block_children(self, block_id):
-    """Get all child blocks for a page or block, handling pagination."""
-    blocks = []
-    start_cursor = None
-
-    while True:
-        params = {"page_size": 100}
-        if start_cursor:
-            params["start_cursor"] = start_cursor
-
-        response = requests.get(
-            f"{self.notion_base_url}/blocks/{block_id}/children",
-            headers=self.notion_headers,
-            params=params
-        )
-        response.raise_for_status()
-
-        data = response.json()
-        blocks.extend(data.get("results", []))
-
-        if not data.get("has_more"):
-            break
-
-        start_cursor = data.get("next_cursor")
-
-    return blocks
-
-
-def collect_quote_fingerprints(self, blocks, fingerprints):
-    """Recursively collect quote text fingerprints from a block tree."""
-    for block in blocks:
-        if block.get("type") == "quote":
-            rich_text = block.get("quote", {}).get("rich_text", [])
-            text = "".join(
-                item.get("plain_text", "")
-                for item in rich_text
-            )
-
-            # Remove the new Readwise link text when checking
-            # for duplicates, so old highlights still match.
-            text = text.replace(" (View Highlight)", "").strip()
-
-            if text:
-                fingerprints.add(hash(text))
-
-        if block.get("has_children"):
-            try:
-                children = self.get_block_children(block["id"])
-                self.collect_quote_fingerprints(children, fingerprints)
-            except Exception as e:
-                print(f"Warning: Could not read child blocks: {e}")
-
-
-def get_existing_page_content(self, page_id):
-    """Get existing quote fingerprints from the entire page tree."""
-    try:
-        blocks = self.get_block_children(page_id)
-
-        fingerprints = set()
-        self.collect_quote_fingerprints(blocks, fingerprints)
-
-        return fingerprints
-
-    except Exception as e:
-        print(f"Error getting page content: {e}")
-        return set()
-
-
-def find_annotations_toggle(self, page_id):
-    """Find the Annotations Heading 1 toggle on a page."""
-    try:
-        blocks = self.get_block_children(page_id)
-
-        for block in blocks:
-            if block.get("type") != "heading_1":
-                continue
-
-            heading = block.get("heading_1", {})
-
-            if not heading.get("is_toggleable"):
-                continue
-
-            rich_text = heading.get("rich_text", [])
-            text = "".join(
-                item.get("plain_text", "")
-                for item in rich_text
-            ).strip()
-
-            if text == "Annotations":
-                return block["id"]
-
-        return None
-
-    except Exception as e:
-        print(f"Error finding Annotations toggle: {e}")
-        return None
-
-
-def create_annotations_toggle(self, page_id):
-    """Create the Annotations Heading 1 toggle."""
-    payload = {
-        "children": [
-            {
-                "object": "block",
-                "type": "heading_1",
-                "heading_1": {
-                    "rich_text": [
-                        {
-                            "type": "text",
-                            "text": {
-                                "content": "Annotations"
-                            }
-                        }
-                    ],
-                    "color": "default",
-                    "is_toggleable": True
-                }
-            }
-        ]
-    }
-
-    response = requests.patch(
-        f"{self.notion_base_url}/blocks/{page_id}/children",
-        headers=self.notion_headers,
-        json=payload
-    )
-    response.raise_for_status()
-
-    created_blocks = response.json().get("results", [])
-
-    if not created_blocks:
-        raise Exception("Failed to create Annotations toggle")
-
-    return created_blocks[0]["id"]
-
-
-def build_highlight_block(self, highlight):
-    """Build a Notion quote block with a link to the individual Readwise highlight."""
-    highlight_text = highlight.get("text", "").strip()
-    readwise_url = highlight.get("readwise_url")
-
-    rich_text = [
-        {
-            "type": "text",
-            "text": {
-                "content": highlight_text[:2000]
-            }
-        }
-    ]
-
-    if readwise_url:
-        rich_text.extend([
-            {
-                "type": "text",
-                "text": {
-                    "content": " ("
-                }
-            },
-            {
-                "type": "text",
-                "text": {
-                    "content": "View Highlight",
-                    "link": {
-                        "url": readwise_url
-                    }
-                }
-            },
-            {
-                "type": "text",
-                "text": {
-                    "content": ")"
-                }
-            }
-        ])
-
-    return {
-        "object": "block",
-        "type": "quote",
-        "quote": {
-            "rich_text": rich_text,
-            "color": "default"
-        }
-    }
-
-
-def build_note_block(self, highlight):
-    """Build the existing note callout block."""
-    note = highlight.get("note", "").strip()
-
-    if not note:
-        return None
-
-    return {
-        "object": "block",
-        "type": "callout",
-        "callout": {
-            "rich_text": [
-                {
-                    "type": "text",
-                    "text": {
-                        "content": f"Note: {note[:2000]}"
-                    }
-                }
-            ],
-            "icon": {
-                "type": "emoji",
-                "emoji": "💭"
-            },
-            "color": "gray_background"
-        }
-    }
-    
-def append_highlights_to_page(self, page_id, highlights):
-    """Append new highlights inside the Annotations toggle."""
-    if not highlights:
-        return
-
-    try:
-        # Sort chronologically
-        highlights = sorted(
-            highlights,
-            key=lambda h: h.get("highlighted_at") or ""
-        )
-
-        # Get every existing quote on the page, including
-        # quotes nested inside the Annotations toggle.
-        existing_fingerprints = self.get_existing_page_content(page_id)
-
-        new_highlights = []
-
-        for highlight in highlights:
-            highlight_text = highlight.get("text", "").strip()
-
-            if not highlight_text:
-                continue
-
-            fingerprint = hash(highlight_text)
-
-            if fingerprint in existing_fingerprints:
-                continue
-
-            new_highlights.append(highlight)
-
-        if not new_highlights:
-            print("No new highlights to add.")
-            return
-
-        # Find the existing Annotations toggle.
-        annotations_id = self.find_annotations_toggle(page_id)
-
-        # If this page doesn't have one yet, create it.
-        if not annotations_id:
-            annotations_id = self.create_annotations_toggle(page_id)
-            print("Created Annotations toggle.")
-
+        """Get all child blocks for a page or block, handling pagination."""
         blocks = []
+        start_cursor = None
 
-        for highlight in new_highlights:
-            # Add the quote block.
-            blocks.append(
-                self.build_highlight_block(highlight)
+        while True:
+            params = {"page_size": 100}
+            if start_cursor:
+                params["start_cursor"] = start_cursor
+
+            response = requests.get(
+                f"{NOTION_API_BASE}/blocks/{block_id}/children",
+                headers=self.notion_headers,
+                params=params
             )
+            response.raise_for_status()
 
-            # Preserve the existing note behavior.
-            note_block = self.build_note_block(highlight)
+            data = response.json()
+            blocks.extend(data.get("results", []))
 
-            if note_block:
-                blocks.append(note_block)
+            if not data.get("has_more"):
+                break
 
-        if not blocks:
-            return
+            start_cursor = data.get("next_cursor")
 
-        # Add the blocks INSIDE the Annotations toggle.
+        return blocks
+
+    def collect_quote_fingerprints(self, blocks, fingerprints):
+        """Recursively collect quote text fingerprints from a block tree."""
+        for block in blocks:
+            if block.get("type") == "quote":
+                rich_text = block.get("quote", {}).get("rich_text", [])
+                text = "".join(
+                    item.get("plain_text", "")
+                    for item in rich_text
+                )
+
+                # Remove the new Readwise link text when checking
+                # for duplicates, so old highlights still match.
+                text = text.replace(" (View Highlight)", "").strip()
+
+                if text:
+                    fingerprints.add(hash(text))
+
+            if block.get("has_children"):
+                try:
+                    children = self.get_block_children(block["id"])
+                    self.collect_quote_fingerprints(children, fingerprints)
+                except Exception as e:
+                    print(f"Warning: Could not read child blocks: {e}")
+
+    def get_existing_page_content(self, page_id):
+        """Get existing quote fingerprints from the entire page tree."""
+        try:
+            blocks = self.get_block_children(page_id)
+
+            fingerprints = set()
+            self.collect_quote_fingerprints(blocks, fingerprints)
+
+            return fingerprints
+
+        except Exception as e:
+            print(f"Error getting page content: {e}")
+            return set()
+
+    def find_annotations_toggle(self, page_id):
+        """Find the Annotations Heading 1 toggle on a page."""
+        try:
+            blocks = self.get_block_children(page_id)
+
+            for block in blocks:
+                if block.get("type") != "heading_1":
+                    continue
+
+                heading = block.get("heading_1", {})
+
+                if not heading.get("is_toggleable"):
+                    continue
+
+                rich_text = heading.get("rich_text", [])
+                text = "".join(
+                    item.get("plain_text", "")
+                    for item in rich_text
+                ).strip()
+
+                if text == "Annotations":
+                    return block["id"]
+
+            return None
+
+        except Exception as e:
+            print(f"Error finding Annotations toggle: {e}")
+            return None
+
+    def create_annotations_toggle(self, page_id):
+        """Create the Annotations Heading 1 toggle."""
         payload = {
-            "children": blocks
+            "children": [
+                {
+                    "object": "block",
+                    "type": "heading_1",
+                    "heading_1": {
+                        "rich_text": [
+                            {
+                                "type": "text",
+                                "text": {
+                                    "content": "Annotations"
+                                }
+                            }
+                        ],
+                        "color": "default",
+                        "is_toggleable": True
+                    }
+                }
+            ]
         }
 
         response = requests.patch(
-            f"{self.notion_base_url}/blocks/{annotations_id}/children",
+            f"{NOTION_API_BASE}/blocks/{page_id}/children",
             headers=self.notion_headers,
             json=payload
         )
         response.raise_for_status()
 
-        print(
-            f"Added {len(new_highlights)} new highlight(s) "
-            f"inside Annotations."
-        )
+        created_blocks = response.json().get("results", [])
 
-    except Exception as e:
-        print(f"Error appending highlights to page: {e}")
-        raise
+        if not created_blocks:
+            raise Exception("Failed to create Annotations toggle")
+
+        return created_blocks[0]["id"]
+
+    def build_highlight_block(self, highlight):
+        """Build a Notion quote block with a link to the individual Readwise highlight."""
+        highlight_text = highlight.get("text", "").strip()
+        readwise_url = highlight.get("readwise_url")
+
+        rich_text = [
+            {
+                "type": "text",
+                "text": {
+                    "content": highlight_text[:2000]
+                }
+            }
+        ]
+
+        if readwise_url:
+            rich_text.extend([
+                {
+                    "type": "text",
+                    "text": {
+                        "content": " ("
+                    }
+                },
+                {
+                    "type": "text",
+                    "text": {
+                        "content": "View Highlight",
+                        "link": {
+                            "url": readwise_url
+                        }
+                    }
+                },
+                {
+                    "type": "text",
+                    "text": {
+                        "content": ")"
+                    }
+                }
+            ])
+
+        return {
+            "object": "block",
+            "type": "quote",
+            "quote": {
+                "rich_text": rich_text,
+                "color": "default"
+            }
+        }
+
+    def build_note_block(self, highlight):
+        """Build the existing note callout block."""
+        note = highlight.get("note", "").strip()
+
+        if not note:
+            return None
+
+        return {
+            "object": "block",
+            "type": "callout",
+            "callout": {
+                "rich_text": [
+                    {
+                        "type": "text",
+                        "text": {
+                            "content": f"Note: {note[:2000]}"
+                        }
+                    }
+                ],
+                "icon": {
+                    "type": "emoji",
+                    "emoji": "💭"
+                },
+                "color": "gray_background"
+            }
+        }
+
+    def append_highlights_to_page(self, page_id, highlights):
+        """Append new highlights inside the Annotations toggle."""
+        if not highlights:
+            return
+
+        try:
+            # Sort chronologically
+            highlights = sorted(
+                highlights,
+                key=lambda h: h.get("highlighted_at") or ""
+            )
+
+            # Get every existing quote on the page, including
+            # quotes nested inside the Annotations toggle.
+            existing_fingerprints = self.get_existing_page_content(page_id)
+
+            new_highlights = []
+
+            for highlight in highlights:
+                highlight_text = highlight.get("text", "").strip()
+
+                if not highlight_text:
+                    continue
+
+                fingerprint = hash(highlight_text)
+
+                if fingerprint in existing_fingerprints:
+                    continue
+
+                new_highlights.append(highlight)
+
+            if not new_highlights:
+                print("No new highlights to add.")
+                return
+
+            # Find the existing Annotations toggle.
+            annotations_id = self.find_annotations_toggle(page_id)
+
+            # If this page doesn't have one yet, create it.
+            if not annotations_id:
+                annotations_id = self.create_annotations_toggle(page_id)
+                print("Created Annotations toggle.")
+
+            blocks = []
+
+            for highlight in new_highlights:
+                # Add the quote block.
+                blocks.append(
+                    self.build_highlight_block(highlight)
+                )
+
+                # Preserve the existing note behavior.
+                note_block = self.build_note_block(highlight)
+
+                if note_block:
+                    blocks.append(note_block)
+
+            if not blocks:
+                return
+
+            # Add the blocks INSIDE the Annotations toggle.
+            payload = {
+                "children": blocks
+            }
+
+            response = requests.patch(
+                f"{NOTION_API_BASE}/blocks/{annotations_id}/children",
+                headers=self.notion_headers,
+                json=payload
+            )
+            response.raise_for_status()
+
+            print(
+                f"Added {len(new_highlights)} new highlight(s) "
+                f"inside Annotations."
+            )
+
+        except Exception as e:
+            print(f"Error appending highlights to page: {e}")
+            raise
     
     def create_notion_page(self, book: Dict) -> Dict:
         """Create a new page in Notion Library database"""
