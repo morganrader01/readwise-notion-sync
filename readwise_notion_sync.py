@@ -166,7 +166,7 @@ class ReadwiseNotionSync:
         
         payload = {
             "filter": {
-                "property": "Title",
+                "property": "Name",
                 "title": {
                     "equals": title
                 }
@@ -199,7 +199,7 @@ class ReadwiseNotionSync:
             # Build OR filter for all titles in this batch
             if len(batch_titles) == 1:
                 filter_obj = {
-                    "property": "Title",
+                    "property": "Name",
                     "title": {
                         "equals": batch_titles[0]
                     }
@@ -208,7 +208,7 @@ class ReadwiseNotionSync:
                 filter_obj = {
                     "or": [
                         {
-                            "property": "Title",
+                            "property": "Name",
                             "title": {
                                 "equals": title
                             }
@@ -235,7 +235,7 @@ class ReadwiseNotionSync:
             # Build a map of title -> page for easy lookup
             for page in results:
                 # Extract title from the page
-                title_prop = page.get('properties', {}).get('Title', {})
+                title_prop = page.get('properties', {}).get('Name', {})
                 if title_prop.get('title'):
                     page_title = title_prop['title'][0]['plain_text']
                     all_pages[page_title] = page
@@ -571,7 +571,7 @@ class ReadwiseNotionSync:
         
         # Build page properties
         properties = {
-            "Title": {
+            "Name": {
                 "title": [{"text": {"content": book.get('title', 'Untitled')}}]
             },
             "Authors": {
