@@ -403,52 +403,71 @@ class ReadwiseNotionSync:
         return created_blocks[0]["id"]
 
     def build_highlight_block(self, highlight):
-        """Build a Notion quote block with a link to the individual Readwise highlight."""
+        """Build one or more Notion quote blocks with a link to the individual Readwise highlight."""
         highlight_text = highlight.get("text", "").strip()
         readwise_url = highlight.get("readwise_url")
 
-        rich_text = [
-            {
-                "type": "text",
-                "text": {
-                    "content": highlight_text[:2000]
-                }
-            }
-        ]
+        # Notion limits each rich-text text.content value to 2,000 characters.
+        # Split long highlights into chunks so no text is lost.
+        max_text_length = 2000
 
-        if readwise_url:
-            rich_text.extend([
+        chunks = [
+            highlight_text[i:i + max_text_length]
+            for i in range(0, len(highlight_text), max_text_length)
+        ]
+    
+        # Make sure we always have at least one chunk.
+        if not chunks:
+            chunks = [""]
+    
+        blocks = []
+    
+        for chunk_index, chunk in enumerate(chunks):
+            rich_text = [
                 {
                     "type": "text",
                     "text": {
-                        "content": " ("
+                        "content": chunk
                     }
-                },
-                {
-                    "type": "text",
-                    "text": {
-                        "content": "View Highlight",
-                        "link": {
-                            "url": readwise_url
+                }
+            ]
+    
+            # Add the Readwise link only to the final chunk.
+            if chunk_index == len(chunks) - 1 and readwise_url:
+                rich_text.extend([
+                    {
+                        "type": "text",
+                        "text": {
+                            "content": " ("
+                        }
+                    },
+                    {
+                        "type": "text",
+                        "text": {
+                            "content": "View Highlight",
+                            "link": {
+                                "url": readwise_url
+                            }
+                        }
+                    },
+                    {
+                        "type": "text",
+                        "text": {
+                            "content": ")"
                         }
                     }
-                },
-                {
-                    "type": "text",
-                    "text": {
-                        "content": ")"
-                    }
+                ])
+    
+            blocks.append({
+                "object": "block",
+                "type": "quote",
+                "quote": {
+                    "rich_text": rich_text,
+                    "color": "default"
                 }
-            ])
-
-        return {
-            "object": "block",
-            "type": "quote",
-            "quote": {
-                "rich_text": rich_text,
-                "color": "default"
-            }
-        }
+            })
+    
+        return blocks
 
     def build_note_block(self, highlight):
         """Build the existing note callout block."""
@@ -523,14 +542,13 @@ class ReadwiseNotionSync:
             blocks = []
 
             for highlight in new_highlights:
-                # Add the quote block.
-                blocks.append(
-                    self.build_highlight_block(highlight)
-                )
-
+                # Add the quote block(s).
+                highlight_blocks = self.build_highlight_block(highlight)
+                blocks.extend(highlight_blocks)
+            
                 # Preserve the existing note behavior.
                 note_block = self.build_note_block(highlight)
-
+            
                 if note_block:
                     blocks.append(note_block)
 
@@ -569,6 +587,10 @@ class ReadwiseNotionSync:
                 f"Added {len(new_highlights)} new highlight(s) "
                 f"inside Annotations."
             )
+
+        except Exception as e:
+            print(f"Error appending highlights to page: {e}")
+            raise
     
     def create_notion_page(self, book: Dict) -> Dict:
         """Create a new page in Notion Library database"""
@@ -763,7 +785,7 @@ class ReadwiseNotionSync:
                 new_highlight_count = book.get('num_highlights', 0)
                 
                 # Only fetch and append highlights if there are NEW ones
-                if new_highlight_count > existing_highlight_count:
+                if new_highlight_count > (existing_highlight_count or 0):
                     print(f"   📝 Found {new_highlight_count - existing_highlight_count} new highlights...")
                     # For existing pages: only fetch highlights created since last sync
                     # This protects manual deletions/edits in Notion
