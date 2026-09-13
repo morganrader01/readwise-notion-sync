@@ -538,25 +538,37 @@ class ReadwiseNotionSync:
                 return
 
             # Add the blocks INSIDE the Annotations toggle.
-            payload = {
-                "children": blocks
-            }
+            # Notion limits how many blocks can be added in one request,
+            # so send them in batches.
+            batch_size = 50
 
-            response = requests.patch(
-                f"{NOTION_API_BASE}/blocks/{annotations_id}/children",
-                headers=self.notion_headers,
-                json=payload
-            )
-            response.raise_for_status()
+            for i in range(0, len(blocks), batch_size):
+                batch = blocks[i:i + batch_size]
+
+                payload = {
+                    "children": batch
+                }
+
+                response = requests.patch(
+                    f"{NOTION_API_BASE}/blocks/{annotations_id}/children",
+                    headers=self.notion_headers,
+                    json=payload
+                )
+            
+                if not response.ok:
+                    print("Notion API error:")
+                    print(response.text)
+                    response.raise_for_status()
+
+                print(
+                    f"Added batch {i // batch_size + 1} "
+                    f"({len(batch)} blocks) inside Annotations."
+                )
 
             print(
                 f"Added {len(new_highlights)} new highlight(s) "
                 f"inside Annotations."
             )
-
-        except Exception as e:
-            print(f"Error appending highlights to page: {e}")
-            raise
     
     def create_notion_page(self, book: Dict) -> Dict:
         """Create a new page in Notion Library database"""
