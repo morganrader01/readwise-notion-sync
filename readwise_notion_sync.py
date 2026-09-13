@@ -46,11 +46,13 @@ SYNCED_ITEMS_FILE = Path(__file__).parent / ".synced_items.json"
 
 # Category mapping from Readwise to your Notion categories
 CATEGORY_MAP = {
-    "books": "Books",
-    "articles": "Articles",
+    "books": "Book",
+    "articles": "Article",
     "tweets": "Quote",
     "podcasts": "Podcast",
-    "supplementals": "Articles"
+    "video": "Video",
+    "pdfs": "PDF"
+    "supplementals": "Article"
 }
 
 
@@ -572,17 +574,17 @@ class ReadwiseNotionSync:
             "Title": {
                 "title": [{"text": {"content": book.get('title', 'Untitled')}}]
             },
-            "Author": {
+            "Authors": {
                 "rich_text": [{"text": {"content": book.get('author', '')}}]
             },
-            "Category": {
+            "Item Type": {
                 "select": {"name": category}
             },
             "Highlights": {
                 "number": book.get('num_highlights', 0)
             },
             "Status": {
-                "status": {"name": "Not started"}
+                "status": {"name": "To Read"}
             },
             "Last Synced": {
                 "date": {
