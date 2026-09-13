@@ -51,7 +51,7 @@ CATEGORY_MAP = {
     "tweets": "Quote",
     "podcasts": "Podcast",
     "video": "Video",
-    "pdfs": "PDF"
+    "pdfs": "PDF",
     "supplementals": "Article"
 }
 
